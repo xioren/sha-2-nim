@@ -50,33 +50,28 @@ proc schedule(i: int): uint64 {.inline.} =
   return sigma1(w[i - 2]) + w[i - 7] + sigma0(w[i - 15]) + w[i - 16]
 
 
-proc padMessage[T](msg: openarray[T], totalLen: int64, buffer: var array[blockSize, uint8], bufferLen: var int) =
-  var paddedLen = 0
-  
-  # NOTE: copy message into buffer
-  for i in 0 ..< msg.len:
-    buffer[paddedLen] = uint8(msg[i])
-    inc paddedLen
-
+proc padBuffer(buffer: var array[blockSize, uint8], bufferLen: var int, totalLen: int64) =
+  ## pad data in the buffer
   # NOTE: append the bit '1' to the message
-  buffer[paddedLen] = 0x80'u8
-  inc paddedLen
+  buffer[bufferLen] = 0x80'u8
+  inc bufferLen
 
-  # NOTE: pad with zeros until last 128 bits
-  while (paddedLen * 8) mod 1024 != 896:
-    buffer[paddedLen] = 0'u8
-    inc paddedLen
+  # NOTE: pad with zeros until the last 64 bits
+  while (bufferLen + 16) < blockSize:  # +16 for the 64-bit length at the end
+    buffer[bufferLen] = 0'u8
+    inc bufferLen
 
-  # NOTE: append the original message length as a 64-bit big-endian integer
-  let msgBitLength = uint64(totalLen * 8)
+  # NOTE: add the original message length as a 128-bit big-endian integer
   # NOTE: upper 64 bits of the 128-bit length field are set to zero
   for i in countdown(15, 8):
-    buffer[paddedLen] = 0'u8
-    inc paddedLen
-  # NOTE: append the lower 64 bits of the message length to the buffer, in big-endian format
+    buffer[bufferLen] = 0'u8
+    inc bufferLen
+  
+  # NOTE: add the lower 64 bits of the message length to the buffer
+  let msgBitLength = uint64(totalLen * 8)
   for i in countdown(7, 0):
-    buffer[paddedLen] = uint8((msgBitLength shr (i * 8)) and 0xff'u64)
-    inc paddedLen
+    buffer[bufferLen] = uint8((msgBitLength shr (i * 8)) and 0xff'u64)
+    inc bufferLen
 
 
 proc processBlock(state: var array[8, uint64], messageBlock: var array[blockSize, uint8]) =
@@ -125,7 +120,7 @@ proc processBlock(state: var array[8, uint64], messageBlock: var array[blockSize
   state[7] += h
 
 
-proc copyCtx(toThisCtx: var Sha512Context, fromThisCtx: Sha512Context) {.inline.} =
+proc copyShaCtx*(toThisCtx: var Sha512Context, fromThisCtx: Sha512Context) =
   for idx, b in fromThisCtx.state:
     toThisCtx.state[idx] = b
   for idx, b in fromThisCtx.buffer:
@@ -146,14 +141,7 @@ proc update*[T](ctx: var Sha512Context, msg: openarray[T]) =
 
 proc finalize*(ctx: var Sha512Context) =
   # NOTE: pad the remaining data in the buffer
-  padMessage(ctx.buffer[0..<ctx.bufferLen], ctx.totalLen, ctx.buffer, ctx.bufferLen)
-
-  # NOTE: process all but the last block in the buffer
-  var i = 0
-  while i < ctx.bufferLen - blockSize:
-    processBlock(ctx.state, ctx.buffer)
-    inc(i, blockSize)
-
+  padBuffer(ctx.buffer, ctx.bufferLen, ctx.totalLen)
   # NOTE: process the final block
   processBlock(ctx.state, ctx.buffer)
 
@@ -163,7 +151,7 @@ proc digest*(ctx: Sha512Context): array[64, uint8] =
   ## does not alter hash state
   var tempCtx: Sha512Context
   new tempCtx
-  copyCtx(tempCtx, ctx)
+  copyShaCtx(tempCtx, ctx)
   
   tempCtx.finalize()
   
@@ -177,10 +165,9 @@ proc hexDigest*(ctx: Sha512Context): string =
   ## does not alter hash state
   var tempCtx: Sha512Context
   new tempCtx
-  copyCtx(tempCtx, ctx)
+  copyShaCtx(tempCtx, ctx)
   
   tempCtx.finalize()
-  
   result = newStringOfCap(128)
   for h in tempCtx.state:
     result.add(h.toHex(16).toLowerAscii())

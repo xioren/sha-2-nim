@@ -201,8 +201,8 @@ proc newSha512Ctx*(msg: string): Sha512Context =
 
 
 when isMainModule:
-  let x = "some test data"
-  var hash = newSha512Ctx(x)
+  let msg = "some test data"
+  var hash = newSha512Ctx(msg)
   assert hash.hexDigest() == "4e03a727411d2f658aa530085ad642aec2b032df17f50c8b0b7f044a47017f142db659b14b846ea685d9cd128a78df2137611510e8f8ec139f1bed0a165fbfb8"
   hash.update("some more test data")
   assert hash.hexDigest() == "ed11592e6e6ab2dfdb98d69177da89f6e90743d257a00e7e5cf78af9cdca55def0515a41f5191fc2d6dc90c51eed760812ec70c20b8f25a9838de86bbb9d00b4"

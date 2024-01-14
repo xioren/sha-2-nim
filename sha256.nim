@@ -190,8 +190,8 @@ proc newSha256Ctx*(msg: string): Sha256Context =
 
 
 when isMainModule:
-  let x = "some test data"
-  var hash = newSha256Ctx(x)
+  let msg = "some test data"
+  var hash = newSha256Ctx(msg)
   assert hash.hexDigest() == "f70c5e847d0ea29088216d81d628df4b4f68f3ccabb2e4031c09cc4d129ae216"
   hash.update("some more test data")
   assert hash.hexDigest() == "4d230a9f76f2b0dec43e5802fd19c6bd040686687de629e7ce98205fe0269b6e"

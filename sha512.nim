@@ -78,11 +78,11 @@ proc padMessage[T](msg: openarray[T], totalLen: int64, buffer: var array[blockSi
     inc paddedLen
 
 
-proc processBlock(state: var array[8, uint64], messageBlock: array[blockSize, uint8]) =
+proc processBlock(state: var array[8, uint64], messageBlock: var array[blockSize, uint8]) =
   # NOTE: prepare the message schedule
   # NOTE: fill in first 16 words
   for i in 0 ..< 16:
-    bigEndian64(addr w[i], unsafeAddr messageBlock[i * wordSize])
+    bigEndian64(addr w[i], addr messageBlock[i * wordSize])
 
   # NOTE: fill in remaining 112
   for i in 16 ..< scheduleSize:

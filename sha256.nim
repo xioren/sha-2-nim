@@ -65,11 +65,11 @@ proc padBuffer(buffer: var array[blockSize, uint8], bufferLen: var int, totalLen
 
 
 proc processBlock(state: var array[8, uint32], messageBlock: var array[blockSize, uint8]) =
-  ## process single 512 bit block os message
-  # NOTE: copy message into schedule array and convert to big endian 32
+  ## process single 512 bit block
+  # NOTE: fill in first 16 words in big endian32 format
   for i in 0 ..< 16:
     bigEndian32(addr w[i], addr messageBlock[i * wordSize])
-  # NOTE: process values in schedule array
+  # NOTE: fill in remaining 48
   for i in 16 ..< scheduleSize:
     w[i] = schedule(i)
 

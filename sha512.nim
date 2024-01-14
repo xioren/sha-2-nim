@@ -46,7 +46,7 @@ const k: array[80, uint64] = [
 
 
 proc schedule(i: int): uint64 {.inline.} =
-  ## generates message schedule values
+  ## modify message schedule values
   return sigma1(w[i - 2]) + w[i - 7] + sigma0(w[i - 15]) + w[i - 16]
 
 
@@ -75,8 +75,8 @@ proc padBuffer(buffer: var array[blockSize, uint8], bufferLen: var int, totalLen
 
 
 proc processBlock(state: var array[8, uint64], messageBlock: var array[blockSize, uint8]) =
-  # NOTE: prepare the message schedule
-  # NOTE: fill in first 16 words
+  ## process single 1024 bit block
+  # NOTE: fill in first 16 words in big endian64 format
   for i in 0 ..< 16:
     bigEndian64(addr w[i], addr messageBlock[i * wordSize])
 

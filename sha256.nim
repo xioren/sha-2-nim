@@ -144,8 +144,7 @@ proc finalize*(ctx: var Sha256Context) =
     inc(i, blockSize)
 
   # NOTE: process the final block
-  if i < ctx.bufferLen:
-    processBlock(ctx.state, ctx.buffer)
+  processBlock(ctx.state, ctx.buffer)
 
 
 proc digest*(ctx: Sha256Context): array[32, uint8] =

@@ -124,7 +124,7 @@ proc processBlock(state: var array[8, uint64], messageBlock: var array[blockSize
   state[7] += h
 
 
-proc copyCtx(toThisCtx, fromThisCtx: var Sha512Context) {.inline.} =
+proc copyCtx(toThisCtx: var Sha512Context, fromThisCtx: Sha512Context) {.inline.} =
   for idx, b in fromThisCtx.state:
     toThisCtx.state[idx] = b
   for idx, b in fromThisCtx.buffer:
@@ -158,7 +158,7 @@ proc finalize*(ctx: var Sha512Context) =
     processBlock(ctx.state, ctx.buffer)
 
 
-proc digest*(ctx: var Sha512Context): array[64, uint8] =
+proc digest*(ctx: Sha512Context): array[64, uint8] =
   ## convert state array[8, uint64] to array[32, uint8]
   ## does not alter hash state
   var tempCtx: Sha512Context
@@ -172,7 +172,7 @@ proc digest*(ctx: var Sha512Context): array[64, uint8] =
   return result
 
 
-proc hexDigest*(ctx: var Sha512Context): string =
+proc hexDigest*(ctx: Sha512Context): string =
   ## convert state array[8, uint64] to hex string of length 128
   ## does not alter hash state
   var tempCtx: Sha512Context

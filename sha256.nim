@@ -42,39 +42,34 @@ const k: array[64, uint32] = [
 
 
 proc schedule(i: int): uint32 {.inline.} =
-  ## generates message schedule values
+  ## modify message schedule values
   return sigma1(w[i - 2]) + w[i - 7] + sigma0(w[i - 15]) + w[i - 16]
 
 
-proc padMessage[T](msg: openarray[T], totalLen: int64, buffer: var array[blockSize, uint8], bufferLen: var int) =
-  var paddedLen = 0
-  
-  # NOTE: copy message into buffer
-  for i in 0 ..< msg.len:
-    buffer[paddedLen] = uint8(msg[i])
-    inc paddedLen
+proc padBuffer(buffer: var array[blockSize, uint8], bufferLen: var int, totalLen: int64) =
+  ## pad data in the buffer
+  # NOTE: ppend the bit '1' to the message
+  buffer[bufferLen] = 0x80'u8
+  inc bufferLen
 
-  # NOTE: append the bit '1' to the message
-  buffer[paddedLen] = 0x80'u8
-  inc paddedLen
-  
-  # NOTE: pad with zeros until last 64 bits
-  while (paddedLen * 8) mod 512 != 448:
-    buffer[paddedLen] = 0'u8
-    inc paddedLen
+  # NOTE pad with zeros until the last 64 bits
+  while (bufferLen + 8) < blockSize:  # +8 for the 64-bit length at the end
+    buffer[bufferLen] = 0'u8
+    inc bufferLen
 
-  # NOTE: append the original message length as a 64-bit big-endian integer
+  # NOTE: add the original message length as a 64-bit big-endian integer
   let msgBitLength = uint64(totalLen * 8)
   for i in countdown(7, 0):
-    buffer[paddedLen] = uint8((msgBitLength shr (i * 8)) and 0xff'u64)
-    inc paddedLen
+    buffer[bufferLen] = uint8((msgBitLength shr (i * 8)) and 0xff'u64)
+    inc bufferLen
 
 
 proc processBlock(state: var array[8, uint32], messageBlock: var array[blockSize, uint8]) =
   ## process single 512 bit block os message
-  # NOTE: prepare the message schedule
+  # NOTE: copy message into schedule array and convert to big endian 32
   for i in 0 ..< 16:
     bigEndian32(addr w[i], addr messageBlock[i * wordSize])
+  # NOTE: process values in schedule array
   for i in 16 ..< scheduleSize:
     w[i] = schedule(i)
 
@@ -114,7 +109,7 @@ proc processBlock(state: var array[8, uint32], messageBlock: var array[blockSize
   state[7] += h
 
 
-proc copyCtx(toThisCtx: var Sha256Context, fromThisCtx: Sha256Context) {.inline.} =
+proc copyShaCtx*(toThisCtx: var Sha256Context, fromThisCtx: Sha256Context) =
   for idx, b in fromThisCtx.state:
     toThisCtx.state[idx] = b
   for idx, b in fromThisCtx.buffer:
@@ -124,6 +119,7 @@ proc copyCtx(toThisCtx: var Sha256Context, fromThisCtx: Sha256Context) {.inline.
 
 
 proc update*[T](ctx: var Sha256Context, msg: openarray[T]) =
+  ## move message into buffer and process as it fills.
   ctx.totalLen.inc(msg.len)
   for i in 0 ..< msg.len:
     ctx.buffer[ctx.bufferLen] = uint8(msg[i])
@@ -135,14 +131,7 @@ proc update*[T](ctx: var Sha256Context, msg: openarray[T]) =
 
 proc finalize*(ctx: var Sha256Context) =
   # NOTE: pad the remaining data in the buffer
-  padMessage(ctx.buffer[0..<ctx.bufferLen], ctx.totalLen, ctx.buffer, ctx.bufferLen)
-
-  # NOTE: process all but the last block in the buffer
-  var i = 0
-  while i < ctx.bufferLen - blockSize:
-    processBlock(ctx.state, ctx.buffer)
-    inc(i, blockSize)
-
+  padBuffer(ctx.buffer, ctx.bufferLen, ctx.totalLen)
   # NOTE: process the final block
   processBlock(ctx.state, ctx.buffer)
 
@@ -152,7 +141,7 @@ proc digest*(ctx: Sha256Context): array[32, uint8] =
   ## does not alter hash state
   var tempCtx: Sha256Context
   new tempCtx
-  copyCtx(tempCtx, ctx)
+  copyShaCtx(tempCtx, ctx)
   
   tempCtx.finalize()
   
@@ -166,7 +155,7 @@ proc hexDigest*(ctx: Sha256Context): string =
   ## does not alter hash state
   var tempCtx: Sha256Context
   new tempCtx
-  copyCtx(tempCtx, ctx)
+  copyShaCtx(tempCtx, ctx)
   
   tempCtx.finalize()
   

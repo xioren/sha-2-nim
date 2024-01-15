@@ -170,7 +170,7 @@ proc hexDigest*(ctx: Sha512_224Context): string =
   copyShaCtx(tempCtx, ctx)
   
   tempCtx.finalize()
-  result = newStringOfCap(128)
+  result = newStringOfCap(56)
   for idx in 0 ..< 6:
     result.add(tempCtx.state[idx].toHex(16).toLowerAscii())
   return result[0 ..< 56]

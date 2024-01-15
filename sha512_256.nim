@@ -159,7 +159,7 @@ proc digest*(ctx: Sha512_256Context): array[32, uint8] =
   tempCtx.finalize()
   
   for idx in 0 ..< 6:
-    bigEndian64(addr result[idx * wordSize], unsafeAddr tempCtx.state[idx])
+    bigEndian64(addr result[idx * wordSize], addr tempCtx.state[idx])
   return result
 
 

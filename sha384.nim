@@ -148,7 +148,7 @@ proc finalize*(ctx: var Sha384Context) =
   processBlock(ctx.state, ctx.buffer)
 
 
-proc digest*(ctx: Sha384Context): array[64, uint8] =
+proc digest*(ctx: Sha384Context): array[48, uint8] =
   ## convert state array[8, uint64] to array[64, uint8]
   ## does not alter hash state
   var tempCtx: Sha384Context

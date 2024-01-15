@@ -52,7 +52,7 @@ proc schedule(i: int): uint64 {.inline.} =
 
 proc padBuffer(buffer: var array[blockSize, uint8], bufferLen: var int, totalLen: int64) =
   ## pad data in the buffer
-  # NOTE: append the bit '1' to the message
+  # NOTE: append the bit '1' to the buffer
   buffer[bufferLen] = 0x80'u8
   inc bufferLen
 

@@ -2,7 +2,7 @@ import std/[endians, strutils]
 
 include sha2
 
-# NOTE: A truncated version of SHA-512 with a different set of initial values
+# NOTE: a truncated version of SHA-512 with a different set of initial values
 
 const wordSize = 8
 const blockSize = 128

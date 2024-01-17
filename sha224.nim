@@ -133,6 +133,10 @@ proc update*[T](ctx: var Sha224Context, msg: openarray[T]) =
 
 
 proc finalize*(ctx: var Sha224Context) =
+  # NOTE: compress data in the buffer if it contains more than blockSize - 8 bytes.
+  # this ensures there is room for the length field
+  if ctx.bufferLen >= blockSize - 8:
+    ctx.compress()
   # NOTE: pad the remaining data in the buffer
   ctx.padBuffer()
   # NOTE: process the final block

@@ -187,7 +187,7 @@ proc newSha224Ctx*(msg: string): Sha224Context =
 
 
 when isMainModule:
-  include testing224
+  include testing/testing224
   
   proc runTestVectors() =
     for v in testVectors:

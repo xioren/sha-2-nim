@@ -197,7 +197,7 @@ proc newSha512_256Ctx*(msg: string): Sha512_256Context =
 
 
 when isMainModule:
-  include testing512_256
+  include testing/testing512_256
   
   proc runTestVectors() =
     for v in testVectors:

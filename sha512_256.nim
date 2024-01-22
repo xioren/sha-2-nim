@@ -6,7 +6,7 @@ include sha2
 
 const wordSize = 8
 const blockSize = 128
-const scheduleSize = 128
+const scheduleSize = 80
 
 # NOTE: schedule array
 var w: array[scheduleSize, uint64]
@@ -15,7 +15,7 @@ type
   Sha512_256Context* = object
     state*: array[8, uint64]
     buffer: array[blockSize, uint8]
-    bufferLen: int  # NOTE: tracks the number of bytes currently in the buffer
+    bufferIdx: int  # NOTE: tracks the number of bytes currently in the buffer
     totalLen: int64 # NOTE: total length of the message
 
 const initState: array[8, uint64] = [
@@ -55,26 +55,22 @@ proc schedule(i: int): uint64 {.inline.} =
 
 proc padBuffer(ctx: var Sha512_256Context) =
   ## pad data in the buffer
-  # NOTE: append the bit '1' to the buffer
-  ctx.buffer[ctx.bufferLen] = 0x80'u8
-  inc ctx.bufferLen
-
   # NOTE: pad with zeros until the last 64 bits
-  while ctx.bufferLen < blockSize - 16:  # -16 for the 64-bit length at the end
-    ctx.buffer[ctx.bufferLen] = 0'u8
-    inc ctx.bufferLen
+  while ctx.bufferIdx < blockSize - 16:  # -16 for the 64-bit length at the end
+    ctx.buffer[ctx.bufferIdx] = 0'u8
+    inc ctx.bufferIdx
 
   # NOTE: add the original message length as a 128-bit big-endian integer
   # NOTE: upper 64 bits of the 128-bit length field are set to zero
   for i in countdown(15, 8):
-    ctx.buffer[ctx.bufferLen] = 0'u8
-    inc ctx.bufferLen
+    ctx.buffer[ctx.bufferIdx] = 0'u8
+    inc ctx.bufferIdx
   
   # NOTE: add the lower 64 bits of the message length to the buffer
   let msgBitLength = uint64(ctx.totalLen * 8)
   for i in countdown(7, 0):
-    ctx.buffer[ctx.bufferLen] = uint8((msgBitLength shr (i * 8)) and 0xff'u64)
-    inc ctx.bufferLen
+    ctx.buffer[ctx.bufferIdx] = uint8((msgBitLength shr (i * 8)) and 0xff'u64)
+    inc ctx.bufferIdx
 
 
 proc compress(ctx: var Sha512_256Context) =
@@ -100,7 +96,7 @@ proc compress(ctx: var Sha512_256Context) =
   # NOTE: compression
   var temp1: uint64
   var temp2: uint64
-  for i in 0 ..< 80:
+  for i in 0 ..< scheduleSize:
     temp1 = h + Sigma1(e) + choice(e, f, g) + k[i] + w[i]
     temp2 = Sigma0(a) + majority(a, b, c)
     h = g
@@ -122,7 +118,7 @@ proc compress(ctx: var Sha512_256Context) =
   ctx.state[6] += g
   ctx.state[7] += h
 
-  ctx.bufferLen = 0
+  ctx.bufferIdx = 0
 
 
 proc copyShaCtx*(toThisCtx: var Sha512_256Context, fromThisCtx: Sha512_256Context) =
@@ -130,24 +126,33 @@ proc copyShaCtx*(toThisCtx: var Sha512_256Context, fromThisCtx: Sha512_256Contex
     toThisCtx.state[idx] = b
   for idx, b in fromThisCtx.buffer:
     toThisCtx.buffer[idx] = b
-  toThisCtx.bufferLen = fromThisCtx.bufferLen
+  toThisCtx.bufferIdx = fromThisCtx.bufferIdx
   toThisCtx.totalLen = fromThisCtx.totalLen
 
 
 proc update*[T](ctx: var Sha512_256Context, msg: openarray[T]) =
   ctx.totalLen.inc(msg.len)
   for i in 0 ..< msg.len:
-    if ctx.bufferLen == blockSize:
+    ctx.buffer[ctx.bufferIdx] = uint8(msg[i])
+    inc ctx.bufferIdx
+    if ctx.bufferIdx == blockSize:
       ctx.compress()
-    ctx.buffer[ctx.bufferLen] = uint8(msg[i])
-    inc ctx.bufferLen
 
 
 proc finalize*(ctx: var Sha512_256Context) =
-  # NOTE: compress data in the buffer if it contains more than blockSize - 16 bytes.
+  # NOTE: append the bit '1' to the buffer guaranteeing at least 1 byte free
+  ctx.buffer[ctx.bufferIdx] = 0x80'u8
+  inc ctx.bufferIdx
+  
+  # NOTE: if buffer contains more than blockSize - ctx.bufferIdx bytes ->
+  # pad remaining space with zeros and compress
   # this ensures there is room for the length field
-  if ctx.bufferLen >= blockSize - 16:
+  let spaceLeft = blockSize - ctx.bufferIdx
+  if spaceLeft < wordSize * 2:
+    for i in 0 ..< spaceLeft:
+      ctx.buffer[ctx.bufferIdx + i] = 0x00'u8
     ctx.compress()
+  
   # NOTE: pad the remaining data in the buffer
   ctx.padBuffer()
   # NOTE: process the final block
@@ -192,8 +197,11 @@ proc newSha512_256Ctx*(msg: string): Sha512_256Context =
 
 
 when isMainModule:
-  let msg = "some test data"
-  var hash = newSha512_256Ctx(msg)
-  assert hash.hexDigest() == "814cf74d24e6def6c7aaae47be7c711dc81ca7e4b08a303ca30b3d8aab8e4655"
-  hash.update("some more test data")
-  assert hash.hexDigest() == "37d5ab2374a09aa8e2a1a1991c8fe5fd6a0447fe35b7cbdda50d76e5179f5072"
+  include testing512_256
+  
+  proc runTestVectors() =
+    for v in testVectors:
+      let ctx = newSha512_256Ctx(v.Msg.parseHexStr())
+      doAssert ctx.hexDigest() == v.MD
+
+  runTestVectors()

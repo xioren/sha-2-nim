@@ -2,83 +2,72 @@ import std/[endians, strutils]
 
 include sha2
 
-# NOTE: the original version with a 512-bit digest
+# NOTE: the original version with a 256-bit digest
 
-const wordSize = 8
-const blockSize = 128
-const scheduleSize = 80
+const wordSize = 4
+const blockSize = 64
+const scheduleSize = 64
 
 # NOTE: schedule array
-var w: array[scheduleSize, uint64]
+var w: array[scheduleSize, uint32]
 
 type
-  Sha512Context* = object
-    state*: array[8, uint64]
+  Sha256Context* = object
+    state*: array[8, uint32]
     buffer: array[blockSize, uint8]
     bufferIdx: int  # NOTE: tracks the number of bytes currently in the buffer
     totalLen: int64 # NOTE: total length of the message
 
-const initState: array[8, uint64] = [
-    0x6a09e667f3bcc908'u64, 0xbb67ae8584caa73b'u64, 0x3c6ef372fe94f82b'u64, 0xa54ff53a5f1d36f1'u64,
-    0x510e527fade682d1'u64, 0x9b05688c2b3e6c1f'u64, 0x1f83d9abfb41bd6b'u64, 0x5be0cd19137e2179'u64
+const initState: array[8, uint32] = [
+    0x6a09e667'u32, 0xbb67ae85'u32, 0x3c6ef372'u32, 0xa54ff53a'u32,
+    0x510e527f'u32, 0x9b05688c'u32, 0x1f83d9ab'u32, 0x5be0cd19'u32
 ]
 # NOTE: round constants
-const k: array[scheduleSize, uint64] = [
-    0x428a2f98d728ae22'u64, 0x7137449123ef65cd'u64, 0xb5c0fbcfec4d3b2f'u64, 0xe9b5dba58189dbbc'u64,
-    0x3956c25bf348b538'u64, 0x59f111f1b605d019'u64, 0x923f82a4af194f9b'u64, 0xab1c5ed5da6d8118'u64,
-    0xd807aa98a3030242'u64, 0x12835b0145706fbe'u64, 0x243185be4ee4b28c'u64, 0x550c7dc3d5ffb4e2'u64,
-    0x72be5d74f27b896f'u64, 0x80deb1fe3b1696b1'u64, 0x9bdc06a725c71235'u64, 0xc19bf174cf692694'u64,
-    0xe49b69c19ef14ad2'u64, 0xefbe4786384f25e3'u64, 0x0fc19dc68b8cd5b5'u64, 0x240ca1cc77ac9c65'u64,
-    0x2de92c6f592b0275'u64, 0x4a7484aa6ea6e483'u64, 0x5cb0a9dcbd41fbd4'u64, 0x76f988da831153b5'u64,
-    0x983e5152ee66dfab'u64, 0xa831c66d2db43210'u64, 0xb00327c898fb213f'u64, 0xbf597fc7beef0ee4'u64,
-    0xc6e00bf33da88fc2'u64, 0xd5a79147930aa725'u64, 0x06ca6351e003826f'u64, 0x142929670a0e6e70'u64,
-    0x27b70a8546d22ffc'u64, 0x2e1b21385c26c926'u64, 0x4d2c6dfc5ac42aed'u64, 0x53380d139d95b3df'u64,
-    0x650a73548baf63de'u64, 0x766a0abb3c77b2a8'u64, 0x81c2c92e47edaee6'u64, 0x92722c851482353b'u64,
-    0xa2bfe8a14cf10364'u64, 0xa81a664bbc423001'u64, 0xc24b8b70d0f89791'u64, 0xc76c51a30654be30'u64,
-    0xd192e819d6ef5218'u64, 0xd69906245565a910'u64, 0xf40e35855771202a'u64, 0x106aa07032bbd1b8'u64,
-    0x19a4c116b8d2d0c8'u64, 0x1e376c085141ab53'u64, 0x2748774cdf8eeb99'u64, 0x34b0bcb5e19b48a8'u64,
-    0x391c0cb3c5c95a63'u64, 0x4ed8aa4ae3418acb'u64, 0x5b9cca4f7763e373'u64, 0x682e6ff3d6b2b8a3'u64,
-    0x748f82ee5defb2fc'u64, 0x78a5636f43172f60'u64, 0x84c87814a1f0ab72'u64, 0x8cc702081a6439ec'u64,
-    0x90befffa23631e28'u64, 0xa4506cebde82bde9'u64, 0xbef9a3f7b2c67915'u64, 0xc67178f2e372532b'u64,
-    0xca273eceea26619c'u64, 0xd186b8c721c0c207'u64, 0xeada7dd6cde0eb1e'u64, 0xf57d4f7fee6ed178'u64,
-    0x06f067aa72176fba'u64, 0x0a637dc5a2c898a6'u64, 0x113f9804bef90dae'u64, 0x1b710b35131c471b'u64,
-    0x28db77f523047d84'u64, 0x32caab7b40c72493'u64, 0x3c9ebe0a15c9bebc'u64, 0x431d67c49c100d4c'u64,
-    0x4cc5d4becb3e42b6'u64, 0x597f299cfc657e2a'u64, 0x5fcb6fab3ad6faec'u64, 0x6c44198c4a475817'u64
+const k: array[64, uint32] = [
+    0x428a2f98'u32, 0x71374491'u32, 0xb5c0fbcf'u32, 0xe9b5dba5'u32,
+    0x3956c25b'u32, 0x59f111f1'u32, 0x923f82a4'u32, 0xab1c5ed5'u32,
+    0xd807aa98'u32, 0x12835b01'u32, 0x243185be'u32, 0x550c7dc3'u32,
+    0x72be5d74'u32, 0x80deb1fe'u32, 0x9bdc06a7'u32, 0xc19bf174'u32,
+    0xe49b69c1'u32, 0xefbe4786'u32, 0x0fc19dc6'u32, 0x240ca1cc'u32,
+    0x2de92c6f'u32, 0x4a7484aa'u32, 0x5cb0a9dc'u32, 0x76f988da'u32,
+    0x983e5152'u32, 0xa831c66d'u32, 0xb00327c8'u32, 0xbf597fc7'u32,
+    0xc6e00bf3'u32, 0xd5a79147'u32, 0x06ca6351'u32, 0x14292967'u32,
+    0x27b70a85'u32, 0x2e1b2138'u32, 0x4d2c6dfc'u32, 0x53380d13'u32,
+    0x650a7354'u32, 0x766a0abb'u32, 0x81c2c92e'u32, 0x92722c85'u32,
+    0xa2bfe8a1'u32, 0xa81a664b'u32, 0xc24b8b70'u32, 0xc76c51a3'u32,
+    0xd192e819'u32, 0xd6990624'u32, 0xf40e3585'u32, 0x106aa070'u32,
+    0x19a4c116'u32, 0x1e376c08'u32, 0x2748774c'u32, 0x34b0bcb5'u32,
+    0x391c0cb3'u32, 0x4ed8aa4a'u32, 0x5b9cca4f'u32, 0x682e6ff3'u32,
+    0x748f82ee'u32, 0x78a5636f'u32, 0x84c87814'u32, 0x8cc70208'u32,
+    0x90befffa'u32, 0xa4506ceb'u32, 0xbef9a3f7'u32, 0xc67178f2'u32
   ]
 
 
-proc schedule(i: int): uint64 {.inline.} =
+proc schedule(i: int): uint32 {.inline.} =
   ## modify message schedule values
   return sigma1(w[i - 2]) + w[i - 7] + sigma0(w[i - 15]) + w[i - 16]
 
 
-proc padBuffer(ctx: var Sha512Context) =
+proc padBuffer(ctx: var Sha256Context) =
   ## pad data in the buffer
-  # NOTE: pad with zeros until the last 64 bits
-  while ctx.bufferIdx < blockSize - 16:  # -16 for the 64-bit length at the end
-    ctx.buffer[ctx.bufferIdx] = 0x00'u8
+  # NOTE pad with zeros until the last 64 bits
+  while ctx.bufferIdx < blockSize - 8:  # -8 for the 64-bit length at the end
+    ctx.buffer[ctx.bufferIdx] = 0'u8
     inc ctx.bufferIdx
-
-  # NOTE: add the original message length as a 128-bit big-endian integer
-  # NOTE: upper 64 bits of the 128-bit length field are set to zero
-  for i in countdown(15, 8):
-    ctx.buffer[ctx.bufferIdx] = 0x00'u8
-    inc ctx.bufferIdx
-
-  # NOTE: add the lower 64 bits of the message length to the buffer
+  
+  # NOTE: add the original message length as a 64-bit big-endian integer
   let msgBitLength = uint64(ctx.totalLen * 8)
   for i in countdown(7, 0):
     ctx.buffer[ctx.bufferIdx] = uint8((msgBitLength shr (i * 8)) and 0xff'u64)
     inc ctx.bufferIdx
+    
 
-
-proc compress(ctx: var Sha512Context) =
-  ## process single 1024 bit block
-  # NOTE: fill in first 16 words in big endian64 format
+proc compress(ctx: var Sha256Context) =
+  ## process single 512 bit block
+  # NOTE: fill in first 16 words in big endian32 format
   for i in 0 ..< 16:
-    bigEndian64(addr w[i], addr ctx.buffer[i * wordSize])
-
-  # NOTE: fill in remaining 112
+    bigEndian32(addr w[i], addr ctx.buffer[i * wordSize])
+  # NOTE: fill in remaining 48
   for i in 16 ..< scheduleSize:
     w[i] = schedule(i)
 
@@ -91,10 +80,10 @@ proc compress(ctx: var Sha512Context) =
   var f = ctx.state[5]
   var g = ctx.state[6]
   var h = ctx.state[7]
-  
+
   # NOTE: compression
-  var temp1: uint64
-  var temp2: uint64
+  var temp1: uint32
+  var temp2: uint32
   for i in 0 ..< scheduleSize:
     temp1 = h + Sigma1(e) + choice(e, f, g) + k[i] + w[i]
     temp2 = Sigma0(a) + majority(a, b, c)
@@ -120,7 +109,7 @@ proc compress(ctx: var Sha512Context) =
   ctx.bufferIdx = 0
 
 
-proc copyShaCtx*(toThisCtx: var Sha512Context, fromThisCtx: Sha512Context) =
+proc copyShaCtx*(toThisCtx: var Sha256Context, fromThisCtx: Sha256Context) =
   for idx, b in fromThisCtx.state:
     toThisCtx.state[idx] = b
   for idx, b in fromThisCtx.buffer:
@@ -129,7 +118,7 @@ proc copyShaCtx*(toThisCtx: var Sha512Context, fromThisCtx: Sha512Context) =
   toThisCtx.totalLen = fromThisCtx.totalLen
 
 
-proc update*[T](ctx: var Sha512Context, msg: openarray[T]) =
+proc update*[T](ctx: var Sha256Context, msg: openarray[T]) =
   ## move message into buffer and compress as it fills.
   ctx.totalLen.inc(msg.len)
   for b in msg:
@@ -139,11 +128,11 @@ proc update*[T](ctx: var Sha512Context, msg: openarray[T]) =
       ctx.compress()
 
 
-proc finalize*(ctx: var Sha512Context) =
+proc finalize*(ctx: var Sha256Context) =
   # NOTE: append the bit '1' to the buffer guaranteeing at least 1 byte free
   ctx.buffer[ctx.bufferIdx] = 0x80'u8
   inc ctx.bufferIdx
-  
+
   # NOTE: if buffer contains more than blockSize - ctx.bufferIdx bytes ->
   # pad remaining space with zeros and compress
   # this ensures there is room for the length field
@@ -152,56 +141,58 @@ proc finalize*(ctx: var Sha512Context) =
     for i in 0 ..< spaceLeft:
       ctx.buffer[ctx.bufferIdx + i] = 0x00'u8
     ctx.compress()
-  
+
   # NOTE: pad the remaining data in the buffer
   ctx.padBuffer()
   # NOTE: process the final block
   ctx.compress()
 
 
-proc digest*(ctx: Sha512Context): array[64, uint8] =
-  ## convert state array[8, uint64] to array[64, uint8]
+proc digest*(ctx: Sha256Context): array[32, uint8] =
+  ## convert state array[8, uint32] to array[32, uint8]
   ## does not alter hash state
-  var tempCtx: Sha512Context
+  var tempCtx: Sha256Context
   copyShaCtx(tempCtx, ctx)
   
   tempCtx.finalize()
   
   for idx in 0 ..< 8:
-    bigEndian64(addr result[idx * wordSize], addr tempCtx.state[idx])
+    bigEndian32(addr result[idx * wordSize], addr tempCtx.state[idx])
+
   return result
 
 
-proc hexDigest*(ctx: Sha512Context): string =
-  ## convert state array[8, uint64] to hex string of length 128
+proc hexDigest*(ctx: Sha256Context): string =
+  ## convert state array[8, uint32] to hex string of length 64
   ## does not alter hash state
-  var tempCtx: Sha512Context
+  var tempCtx: Sha256Context
   copyShaCtx(tempCtx, ctx)
   
   tempCtx.finalize()
-  result = newStringOfCap(128)
+  
+  result = newStringOfCap(64)
   for idx in 0 ..< 8:
-    result.add(tempCtx.state[idx].toHex(16).toLowerAscii())
+    result.add(tempCtx.state[idx].toHex(8).toLowerAscii())
   return result
 
 
-proc newSha512Ctx*(msg: openarray[uint8] = @[]): Sha512Context =
+proc newSha256Ctx*(msg: openarray[uint8] = @[]): Sha256Context =
   # NOTE: initialize state
   result.state = initState
   if msg.len > 0:
     result.update(msg)
 
 
-proc newSha512Ctx*(msg: string): Sha512Context =
-  return newSha512Ctx(msg.toOpenArrayByte(0, msg.len.pred))
+proc newSha256Ctx*(msg: string): Sha256Context =
+  return newSha256Ctx(msg.toOpenArrayByte(0, msg.len.pred))
 
 
 when isMainModule:
-  include testing512
+  include testing256
   
   proc runTestVectors() =
     for v in testVectors:
-      let ctx = newSha512Ctx(v.Msg.parseHexStr())
+      let ctx = newSha256Ctx(v.Msg.parseHexStr())
       doAssert ctx.hexDigest() == v.MD
 
   runTestVectors()

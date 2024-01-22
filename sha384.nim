@@ -196,7 +196,7 @@ proc newSha384Ctx*(msg: string): Sha384Context =
 
 
 when isMainModule:
-  include testing384
+  include testing/testing384
   
   proc runTestVectors() =
     for v in testVectors:

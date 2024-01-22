@@ -6,7 +6,7 @@ include sha2
 
 const wordSize = 8
 const blockSize = 128
-const scheduleSize = 128
+const scheduleSize = 80
 
 # NOTE: schedule array
 var w: array[scheduleSize, uint64]
@@ -15,7 +15,7 @@ type
   Sha512Context* = object
     state*: array[8, uint64]
     buffer: array[blockSize, uint8]
-    bufferLen: int  # NOTE: tracks the number of bytes currently in the buffer
+    bufferIdx: int  # NOTE: tracks the number of bytes currently in the buffer
     totalLen: int64 # NOTE: total length of the message
 
 const initState: array[8, uint64] = [
@@ -23,7 +23,7 @@ const initState: array[8, uint64] = [
     0x510e527fade682d1'u64, 0x9b05688c2b3e6c1f'u64, 0x1f83d9abfb41bd6b'u64, 0x5be0cd19137e2179'u64
 ]
 # NOTE: round constants
-const k: array[80, uint64] = [
+const k: array[scheduleSize, uint64] = [
     0x428a2f98d728ae22'u64, 0x7137449123ef65cd'u64, 0xb5c0fbcfec4d3b2f'u64, 0xe9b5dba58189dbbc'u64,
     0x3956c25bf348b538'u64, 0x59f111f1b605d019'u64, 0x923f82a4af194f9b'u64, 0xab1c5ed5da6d8118'u64,
     0xd807aa98a3030242'u64, 0x12835b0145706fbe'u64, 0x243185be4ee4b28c'u64, 0x550c7dc3d5ffb4e2'u64,
@@ -54,26 +54,22 @@ proc schedule(i: int): uint64 {.inline.} =
 
 proc padBuffer(ctx: var Sha512Context) =
   ## pad data in the buffer
-  # NOTE: append the bit '1' to the buffer
-  ctx.buffer[ctx.bufferLen] = 0x80'u8
-  inc ctx.bufferLen
-
   # NOTE: pad with zeros until the last 64 bits
-  while ctx.bufferLen < blockSize - 16:  # -16 for the 64-bit length at the end
-    ctx.buffer[ctx.bufferLen] = 0'u8
-    inc ctx.bufferLen
+  while ctx.bufferIdx < blockSize - 16:  # -16 for the 64-bit length at the end
+    ctx.buffer[ctx.bufferIdx] = 0x00'u8
+    inc ctx.bufferIdx
 
   # NOTE: add the original message length as a 128-bit big-endian integer
   # NOTE: upper 64 bits of the 128-bit length field are set to zero
   for i in countdown(15, 8):
-    ctx.buffer[ctx.bufferLen] = 0'u8
-    inc ctx.bufferLen
-  
+    ctx.buffer[ctx.bufferIdx] = 0x00'u8
+    inc ctx.bufferIdx
+
   # NOTE: add the lower 64 bits of the message length to the buffer
   let msgBitLength = uint64(ctx.totalLen * 8)
   for i in countdown(7, 0):
-    ctx.buffer[ctx.bufferLen] = uint8((msgBitLength shr (i * 8)) and 0xff'u64)
-    inc ctx.bufferLen
+    ctx.buffer[ctx.bufferIdx] = uint8((msgBitLength shr (i * 8)) and 0xff'u64)
+    inc ctx.bufferIdx
 
 
 proc compress(ctx: var Sha512Context) =
@@ -95,11 +91,11 @@ proc compress(ctx: var Sha512Context) =
   var f = ctx.state[5]
   var g = ctx.state[6]
   var h = ctx.state[7]
-
+  
   # NOTE: compression
   var temp1: uint64
   var temp2: uint64
-  for i in 0 ..< 80:
+  for i in 0 ..< scheduleSize:
     temp1 = h + Sigma1(e) + choice(e, f, g) + k[i] + w[i]
     temp2 = Sigma0(a) + majority(a, b, c)
     h = g
@@ -121,7 +117,7 @@ proc compress(ctx: var Sha512Context) =
   ctx.state[6] += g
   ctx.state[7] += h
 
-  ctx.bufferLen = 0
+  ctx.bufferIdx = 0
 
 
 proc copyShaCtx*(toThisCtx: var Sha512Context, fromThisCtx: Sha512Context) =
@@ -129,24 +125,34 @@ proc copyShaCtx*(toThisCtx: var Sha512Context, fromThisCtx: Sha512Context) =
     toThisCtx.state[idx] = b
   for idx, b in fromThisCtx.buffer:
     toThisCtx.buffer[idx] = b
-  toThisCtx.bufferLen = fromThisCtx.bufferLen
+  toThisCtx.bufferIdx = fromThisCtx.bufferIdx
   toThisCtx.totalLen = fromThisCtx.totalLen
 
 
 proc update*[T](ctx: var Sha512Context, msg: openarray[T]) =
+  ## move message into buffer and compress as it fills.
   ctx.totalLen.inc(msg.len)
-  for i in 0 ..< msg.len:
-    if ctx.bufferLen == blockSize:
+  for b in msg:
+    ctx.buffer[ctx.bufferIdx] = uint8(b)
+    inc ctx.bufferIdx
+    if ctx.bufferIdx == blockSize:
       ctx.compress()
-    ctx.buffer[ctx.bufferLen] = uint8(msg[i])
-    inc ctx.bufferLen
 
 
 proc finalize*(ctx: var Sha512Context) =
-  # NOTE: compress data in the buffer if it contains more than blockSize - 16 bytes.
+  # NOTE: append the bit '1' to the buffer guaranteeing at least 1 byte free
+  ctx.buffer[ctx.bufferIdx] = 0x80'u8
+  inc ctx.bufferIdx
+  
+  # NOTE: if buffer contains more than blockSize - ctx.bufferIdx bytes ->
+  # pad remaining space with zeros and compress
   # this ensures there is room for the length field
-  if ctx.bufferLen >= blockSize - 16:
+  let spaceLeft = blockSize - ctx.bufferIdx
+  if spaceLeft < wordSize * 2:
+    for i in 0 ..< spaceLeft:
+      ctx.buffer[ctx.bufferIdx + i] = 0x00'u8
     ctx.compress()
+  
   # NOTE: pad the remaining data in the buffer
   ctx.padBuffer()
   # NOTE: process the final block
@@ -191,8 +197,11 @@ proc newSha512Ctx*(msg: string): Sha512Context =
 
 
 when isMainModule:
-  let msg = "some test data"
-  var hash = newSha512Ctx(msg)
-  assert hash.hexDigest() == "4e03a727411d2f658aa530085ad642aec2b032df17f50c8b0b7f044a47017f142db659b14b846ea685d9cd128a78df2137611510e8f8ec139f1bed0a165fbfb8"
-  hash.update("some more test data")
-  assert hash.hexDigest() == "ed11592e6e6ab2dfdb98d69177da89f6e90743d257a00e7e5cf78af9cdca55def0515a41f5191fc2d6dc90c51eed760812ec70c20b8f25a9838de86bbb9d00b4"
+  include testing512
+  
+  proc runTestVectors() =
+    for v in testVectors:
+      let ctx = newSha512Ctx(v.Msg.parseHexStr())
+      doAssert ctx.hexDigest() == v.MD
+
+  runTestVectors()
